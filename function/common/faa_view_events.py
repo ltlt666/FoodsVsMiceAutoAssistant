@@ -116,6 +116,39 @@ class FAAViewEvents:
             matches = [item for item in self._matches.values() if now - item[0] < 1.2]
         return clicks, matches
 
+    def inject(self, name: str, bounds: tuple, score: float, threshold: float, found: bool = True):
+        """注入模拟识图结果，只用于在没有真实识图发生的环境里验证特效显示。
+
+        与 match() 不同，这里不校验观测句柄：调试开关打开时，即使当前窗口没有
+        FAA 的真实识图，也要能画出绿框和底部调试行。数量上限与真实事件一致，
+        事件仍按 snapshot() 的时间窗口自然过期，不会长期堆积。
+
+        Args:
+            name: 显示在目标框和底部调试行里的模板名。
+            bounds: 全窗口坐标 (左, 上, 右, 下)。
+            score: 匹配度或模型置信度。
+            threshold: 业务阈值。
+            found: 是否达到阈值；False 时只出现在底部调试行，不画成命中目标。
+        """
+        if not self.show_recognition or not math.isfinite(score):
+            return
+        with self._lock:
+            if not self.show_recognition:
+                return
+            key = (name, bounds)
+            self._matches[key] = (time.monotonic(), name, bounds, score, threshold, found)
+            self._matches.move_to_end(key)
+            while len(self._matches) > 80:
+                self._matches.popitem(last=False)
+
+    def inject_click(self, x: float, y: float):
+        """注入模拟点击位置，只用于验证点击动画，不校验观测句柄与投递结果。"""
+        if not self.show_clicks:
+            return
+        with self._lock:
+            if self.show_clicks:
+                self._clicks.append((time.monotonic(), x, y))
+
     def consume_senior_result(self, result):
         """读取高级战斗已有队列的诊断数据，并原样返回策略信息。
 
